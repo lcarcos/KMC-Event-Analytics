@@ -3,13 +3,18 @@ import { CSV_DATA } from './constants';
 import { parseCSVData, calculateMetrics } from './utils';
 import { Dashboard } from './components/Dashboard';
 import { OrderTable } from './components/OrderTable';
-import { LayoutDashboard, Table as TableIcon, Download, Filter, Upload, RefreshCcw, Check } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+import { LayoutDashboard, Table as TableIcon, Download, Filter, Upload, RefreshCcw, Check, Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'table'>('dashboard');
   const [customCSV, setCustomCSV] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dashboardRef = useRef<HTMLDivElement>(null);
 
   // Handler for file upload
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -33,6 +38,55 @@ const App: React.FC = () => {
 
   const handleResetData = () => {
     setCustomCSV(null);
+  };
+
+  const handleExportPDF = async () => {
+    if (!dashboardRef.current) return;
+
+    try {
+      setIsExporting(true);
+
+      const canvas = await html2canvas(dashboardRef.current, {
+        scale: 2, // Higher quality
+        backgroundColor: '#f9fafb', // Match bg-gray-50
+        ignoreElements: (element) => element.classList.contains('no-print')
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+
+      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+
+      const imgX = (pdfWidth - imgWidth * ratio) / 2;
+      const imgY = 10; // Top margin
+
+      // Calculate height to fit width
+      const imgHeightPdf = (imgHeight * pdfWidth) / imgWidth;
+
+      // If content is taller than page, we might need multiple pages or just fit width
+      // For simplicity in dashboard, we usually just fit width and let height flow or scale down
+      if (imgHeightPdf > pdfHeight) {
+        const scaledHeight = pdfHeight - 20;
+        const scaledWidth = (imgWidth * scaledHeight) / imgHeight;
+        const centeredX = (pdfWidth - scaledWidth) / 2;
+        pdf.addImage(imgData, 'PNG', centeredX, 10, scaledWidth, scaledHeight);
+      } else {
+        pdf.addImage(imgData, 'PNG', 0, 10, pdfWidth, imgHeightPdf);
+      }
+
+      pdf.save(`KMC-Event-Analytics-${new Date().toISOString().split('T')[0]}.pdf`);
+
+    } catch (error) {
+      console.error("Export failed", error);
+      alert("Hubo un error al generar el PDF.");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Parse data
@@ -67,7 +121,7 @@ const App: React.FC = () => {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-gray-200 transform transition-transform duration-300 ease-in-out md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full no-print'}`}>
         <div className="p-6 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-200">
@@ -134,9 +188,9 @@ const App: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 p-4 md:p-8 lg:p-10 md:ml-64 transition-all w-full overflow-hidden">
+      <main className="flex-1 p-4 md:p-8 lg:p-10 md:ml-64 transition-all w-full overflow-hidden" ref={dashboardRef}>
         {/* Header Mobile */}
-        <div className="md:hidden flex items-center justify-between mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-100 sticky top-0 z-20">
+        <div className="md:hidden flex items-center justify-between mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-100 sticky top-0 z-20 no-print">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -166,7 +220,7 @@ const App: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3 no-print">
             <button
               onClick={handleTriggerUpload}
               className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-indigo-300 transition-all shadow-sm group"
@@ -179,9 +233,13 @@ const App: React.FC = () => {
               <Filter size={16} />
               Filtrar
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-colors">
-              <Download size={16} />
-              Exportar Informe
+            <button
+              onClick={handleExportPDF}
+              disabled={isExporting}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isExporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              {isExporting ? 'Generando PDF...' : 'Exportar Informe'}
             </button>
           </div>
         </header>
