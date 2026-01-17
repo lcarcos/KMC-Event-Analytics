@@ -1,0 +1,5 @@
+{
+  "name": "EventAnalytics Dashboard",
+  "description": "Panel de control interactivo para análisis de pedidos de eventos, visualizando ingresos, métodos de pago y necesidades logísticas.",
+  "requestFramePermissions": []
+}
